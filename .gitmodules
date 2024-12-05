@@ -1,0 +1,3 @@
+[submodule "pinocchio"]
+	path = pinocchio
+	url = https://github.com/stack-of-tasks/pinocchio.git
