@@ -61,12 +61,6 @@ def visualizer_thread():
         time.sleep(0.05)  # Adjust for desired update rate
 
 
-# --- Casadi helpers
-cmodel = cpin.Model(model)
-cdata = cmodel.createData()
-cq = casadi.SX.sym("q", model.nq, 1)
-# cpin.framesForwardKinematics(cmodel, cdata, cq)
-
 # Start the visualizer thread
 thread = threading.Thread(target=visualizer_thread, daemon=True)
 thread.start()

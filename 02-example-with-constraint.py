@@ -61,12 +61,6 @@ def visualizer_thread():
         time.sleep(0.05)  # Adjust for desired update rate
 
 
-# --- Casadi helpers
-# cmodel = cpin.Model(model)
-# cdata = cmodel.createData()
-# cq = casadi.SX.sym("q", model.nq, 1)
-# cpin.framesForwardKinematics(cmodel, cdata, cq)
-
 # Start the visualizer thread
 thread = threading.Thread(target=visualizer_thread, daemon=True)
 thread.start()
@@ -86,7 +80,6 @@ while True:
     # --- Casadi helpers
     cmodel = cpin.Model(model)
     cdata = cmodel.createData()
-    # cq = casadi.SX.sym("q", model.nq, 1)
     cq = casadi.SX.sym("cq2", cmodel.nq, 1)
     ctau = casadi.SX.sym("ctau", cmodel.nq, 1)
     cf = casadi.SX.sym("cf", 6, 1)
@@ -95,7 +88,7 @@ while True:
     cpin.computeJointJacobians(cmodel, cdata)
     Jtool = cpin.getFrameJacobian(cmodel, cdata, tool_id, pin.LOCAL_WORLD_ALIGNED)
 
-    # setup optimization
+    # setup optimization cost function
     error_tool = casadi.Function(
         "etool",
         [cq],
@@ -111,36 +104,35 @@ while True:
         [cq],
         [cdata.oMf[tool_id].translation - in_world_M_target.translation],
     )
-    opti2 = casadi.Opti()
-    var_q = opti2.variable(model.nq)
-    var_tau = opti2.variable(model.nq)
-    var_f = opti2.variable(6)
 
-    # opti = casadi.Opti()
-    # var_q = opti.variable(model.nq)
+    # setup optimizer
+    opti = casadi.Opti()
+    var_q = opti.variable(model.nq)
+    var_tau = opti.variable(model.nq)
+    var_f = opti.variable(6)
 
-    opti2.set_initial(var_q, q)
+    # set init value
+    opti.set_initial(var_q, q)
 
     fdes = np.array([10, 0, 0, 0, 0, 0])
     totalcost = casadi.sumsqr(var_f - fdes) + 1e-3 * casadi.sumsqr(var_tau)
-
-    opti2.subject_to(error3(var_q) == 0)
-    opti2.subject_to(dyncst(var_q, var_tau, var_f) == 0)
-
     # totalcost = casadi.sumsqr(error_tool(var_q))
-    opti2.minimize(totalcost)
-    opti2.solver("ipopt")  # select the backend solver
-    opti2.callback(lambda i: displayScene(opti2.debug.value(var_q)))
+    opti.subject_to(error3(var_q) == 0)
+    opti.subject_to(dyncst(var_q, var_tau, var_f) == 0)
+
+    opti.minimize(totalcost)
+    opti.solver("ipopt")  # select the backend solver
+    opti.callback(lambda i: displayScene(opti.debug.value(var_q)))
 
     # calculate a solution
     try:
-        sol = opti2.solve_limited()
-        sol_q = opti2.value(var_q)
-        sol_tau = opti2.value(var_tau)
-        sol_f = opti2.value(var_f)
+        sol = opti.solve_limited()
+        sol_q = opti.value(var_q)
+        sol_tau = opti.value(var_tau)
+        sol_f = opti.value(var_f)
     except:
         print("ERROR in convergence, plotting debug info.")
-        sol_q = opti2.debug.value(var_q)
+        sol_q = opti.debug.value(var_q)
 
     pin.framesForwardKinematics(model, data, sol_q)
     pin.computeGeneralizedGravity(model, data, sol_q)
