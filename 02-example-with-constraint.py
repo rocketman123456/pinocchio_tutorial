@@ -62,9 +62,9 @@ def visualizer_thread():
 
 
 # --- Casadi helpers
-cmodel = cpin.Model(model)
-cdata = cmodel.createData()
-cq = casadi.SX.sym("q", model.nq, 1)
+# cmodel = cpin.Model(model)
+# cdata = cmodel.createData()
+# cq = casadi.SX.sym("q", model.nq, 1)
 # cpin.framesForwardKinematics(cmodel, cdata, cq)
 
 # Start the visualizer thread
@@ -86,8 +86,14 @@ while True:
     # --- Casadi helpers
     cmodel = cpin.Model(model)
     cdata = cmodel.createData()
-    cq = casadi.SX.sym("q", model.nq, 1)
+    # cq = casadi.SX.sym("q", model.nq, 1)
+    cq = casadi.SX.sym("cq2", cmodel.nq, 1)
+    ctau = casadi.SX.sym("ctau", cmodel.nq, 1)
+    cf = casadi.SX.sym("cf", 6, 1)
     cpin.framesForwardKinematics(cmodel, cdata, cq)
+    cpin.computeGeneralizedGravity(cmodel, cdata, cq)
+    cpin.computeJointJacobians(cmodel, cdata)
+    Jtool = cpin.getFrameJacobian(cmodel, cdata, tool_id, pin.LOCAL_WORLD_ALIGNED)
 
     # setup optimization
     error_tool = casadi.Function(
@@ -95,23 +101,49 @@ while True:
         [cq],
         [cpin.log6(cdata.oMf[tool_id].inverse() * cpin.SE3(in_world_M_target)).vector],
     )
-    opti = casadi.Opti()
-    var_q = opti.variable(model.nq)
-    opti.set_initial(var_q, q)
-    totalcost = casadi.sumsqr(error_tool(var_q))
-    opti.minimize(totalcost)
-    opti.solver("ipopt")  # select the backend solver
-    opti.callback(lambda i: displayScene(opti.debug.value(var_q)))
+    dyncst = casadi.Function(
+        "dyn",
+        [cq, ctau, cf],
+        [cdata.g - ctau - Jtool.T @ cf],
+    )
+    error3 = casadi.Function(
+        "e3",
+        [cq],
+        [cdata.oMf[tool_id].translation - in_world_M_target.translation],
+    )
+    opti2 = casadi.Opti()
+    var_q = opti2.variable(model.nq)
+    var_tau = opti2.variable(model.nq)
+    var_f = opti2.variable(6)
+
+    # opti = casadi.Opti()
+    # var_q = opti.variable(model.nq)
+
+    opti2.set_initial(var_q, q)
+
+    fdes = np.array([10, 0, 0, 0, 0, 0])
+    totalcost = casadi.sumsqr(var_f - fdes) + 1e-3 * casadi.sumsqr(var_tau)
+
+    opti2.subject_to(error3(var_q) == 0)
+    opti2.subject_to(dyncst(var_q, var_tau, var_f) == 0)
+
+    # totalcost = casadi.sumsqr(error_tool(var_q))
+    opti2.minimize(totalcost)
+    opti2.solver("ipopt")  # select the backend solver
+    opti2.callback(lambda i: displayScene(opti2.debug.value(var_q)))
 
     # calculate a solution
     try:
-        sol = opti.solve_limited()
-        sol_q = opti.value(var_q)
+        sol = opti2.solve_limited()
+        sol_q = opti2.value(var_q)
+        sol_tau = opti2.value(var_tau)
+        sol_f = opti2.value(var_f)
     except:
         print("ERROR in convergence, plotting debug info.")
-        sol_q = opti.debug.value(var_q)
+        sol_q = opti2.debug.value(var_q)
 
     pin.framesForwardKinematics(model, data, sol_q)
+    pin.computeGeneralizedGravity(model, data, sol_q)
 
     with lock:
         q = sol_q
