@@ -21,6 +21,7 @@ intg = integrator("intg", "rk", dae, 0, T / N)
 # res = intg([0, 1], 0, [], [], [], [], [])
 # res = intg(x0=[0, 1], p=0)
 # print(res["xf"])
+# f = Function("f", [x, y], [x, sin(y) * x], ["x", "y"], ["r", "q"])
 
 # system integration
 x = [0, 1]  # Initial state
