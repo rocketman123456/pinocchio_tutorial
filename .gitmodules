@@ -4,3 +4,9 @@
 [submodule "example-robot-data"]
 	path = example-robot-data
 	url = https://github.com/Gepetto/example-robot-data.git
+[submodule "crocoddyl"]
+	path = crocoddyl
+	url = https://github.com/loco-3d/crocoddyl.git
+[submodule "acados"]
+	path = acados
+	url = https://github.com/acados/acados.git

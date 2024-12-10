@@ -13,10 +13,6 @@ from types import SimpleNamespace
 robot = robex.load("talos_legs")
 # Open the viewer
 viz = MeshcatVisualizer(robot, url=None)
-
-# q0 = pin.neutral(robot.model)
-# robot.q0 = q0
-# viz.display(q0)
 viz.display(robot.q0)
 
 # The pinocchio model is what we are really interested by.
