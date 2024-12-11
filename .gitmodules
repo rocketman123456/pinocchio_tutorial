@@ -1,12 +1,12 @@
 [submodule "pinocchio"]
-	path = pinocchio
+	path = third_party/pinocchio
 	url = https://github.com/stack-of-tasks/pinocchio.git
 [submodule "example-robot-data"]
-	path = example-robot-data
+	path = third_party/example-robot-data
 	url = https://github.com/Gepetto/example-robot-data.git
 [submodule "crocoddyl"]
-	path = crocoddyl
+	path = third_party/crocoddyl
 	url = https://github.com/loco-3d/crocoddyl.git
 [submodule "acados"]
-	path = acados
+	path = third_party/acados
 	url = https://github.com/acados/acados.git
