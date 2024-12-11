@@ -1,0 +1,63 @@
+# Constraints
+[constraint.joint.limit]
+weight = 0
+r = 0.97
+
+[constraint.hard]
+use = true
+
+[constraint.torque.limit]
+weight = 0
+r = 1.0
+
+[constraint.wrenchcone]
+weight = 0
+
+# [constraint.copbox]
+# weight = 1e2
+# size = [0.01, 0.01]
+
+[constraint.frametranslation]
+weight = 0
+
+# Contact model
+[contact.baumgarte]
+gains = [0.0, 0.0]
+
+# Impact costs
+[impact.swingfoot]
+weight = 0
+
+# Tracking costs
+[tracking.supportfoot]
+weight = 0
+
+[tracking.swingfoot]
+min_weight = 1
+max_weight = 1
+ratio = [1.0, 1.0, 1.0, 0.1, 0.01, 1.0]
+
+# [tracking.swingfoot.flyhigh]
+# slope = 10.0
+# weight = 1e7
+
+# Regularization
+[regularization.swingfoot]
+verticalvelocity = 0.0
+
+[regularization.freeflyer]
+orientation = 0
+
+[regularization.state]
+position = 1e-6
+
+[regularization.joint]
+position = 1
+velocity = 1
+acceleration = 1e-5
+torque = 0
+
+# Final state
+[final.joint]
+position = 1
+velocity = 1e3
