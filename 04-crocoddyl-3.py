@@ -3,7 +3,6 @@ import numpy as np
 import pinocchio
 import crocoddyl
 import signal
-from meshcat_viewer_wrapper import MeshcatVisualizer
 
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
@@ -221,6 +220,8 @@ solver.solve(xs, us, 500, False, 1e-9)
 
 # ### DISPLAY
 # Initialize viewer
+from meshcat_viewer_wrapper import MeshcatVisualizer
+
 viz = MeshcatVisualizer(robot, url=None)
 viz.display(robot.q0)
 
