@@ -5,147 +5,48 @@ import numpy as np
 import pinocchio as pin
 from pinocchio import casadi as cpin
 from meshcat_viewer_wrapper import MeshcatVisualizer
+from types import SimpleNamespace
 
-### Talos Jumping Example
-robot = robex.load("talos")
-# The pinocchio model is what we are really interested by.
-model = robot.model
-data = model.createData()
-
+# Talos Robot Jumping Example : TODO
+robot = robex.load("talos_legs")
 # Open the viewer
 viz = MeshcatVisualizer(robot, url=None)
 viz.display(robot.q0)
 
-cmodel = cpin.Model(robot.model)
-cdata = cmodel.createData()
+# The pinocchio model is what we are really interested by.
+model = robot.model
+data = model.createData()
 
-q0 = robot.q0
-nq = cmodel.nq
-nDq = cmodel.nv
-
+in_world_Base_start = pin.SE3(np.eye(3), np.array([0.0, 0.0, 0.8]))  # x,y,z
+in_world_Base_target = pin.SE3(np.eye(3), np.array([0.0, 0.0, 1.2]))  # x,y,z
 # in_world_M_target = pin.SE3(pin.utils.rotate("y", 3), np.array([-0.1, 0.2, 0.45094]))  # x,y,z
-# contacts = [SimpleNamespace(name="left_sole_link", type=pin.ContactType.CONTACT_6D)]
-# tool_frameName = "right_sole_link"
+contacts = [
+    SimpleNamespace(name="left_sole_link", type=pin.ContactType.CONTACT_6D),
+    SimpleNamespace(name="right_sole_link", type=pin.ContactType.CONTACT_6D),
+]
 
-cq = casadi.SX.sym("cq", nq, 1)
-cDq = casadi.SX.sym("cx", nDq, 1)
-R = casadi.SX.sym("R", 3, 3)
-R_ref = casadi.SX.sym("R_ref", 3, 3)
+tool_frameNames = ["left_sole_link", "right_sole_link"]
+tool_ids = []
+for name in tool_frameNames:
+    id = model.getFrameId(name)
+    tool_ids.append(id)
 
-# Get the index of the frames which are going to be used
-IDX_BASE = cmodel.getFrameId("torso_2_link")
-IDX_LF = cmodel.getFrameId("leg_left_6_link")
-IDX_RF = cmodel.getFrameId("leg_right_6_link")
-IDX_LG = cmodel.getFrameId("gripper_left_base_link")
-IDX_RG = cmodel.getFrameId("gripper_right_base_link")
-IDX_LE = cmodel.getFrameId("arm_left_4_joint")
-IDX_RE = cmodel.getFrameId("arm_right_4_joint")
+base_id = model.getFrameId("base_link")
+base_2_id = model.getFrameId("torso_2_link")
 
-# This is used in order to go from a configuration and the displacement to the final configuration.
-# Why pinocchio.integrate and not simply q = q0 + v*dt?
-# q and v have different dimensions because q contains quaterniions and this can't be done
-# So pinocchio.integrate(config, Dq)
-integrate = casadi.Function("integrate", [cq, cDq], [cpin.integrate(cmodel, cq, cDq)])
+for c in contacts:
+    c.id = model.getFrameId(c.name)
+    assert c.id < len(model.frames)
 
-# Casadi function to map joints configuration to COM position
-com_position = casadi.Function("com", [cq], [cpin.centerOfMass(cmodel, cdata, cq)])
-
-# Compute the forward kinematics and store the data in 'cdata'
-# Note that now cdata is filled with symbols, so there is no need to compute the forward kinematics at every variation of q
-# Since everything is a symbol, a substituition (which is what casadi functions do) is enough
-cpin.framesForwardKinematics(cmodel, cdata, cq)
-cpin.updateFramePlacements(cmodel, cdata)
-
-base_rotation = casadi.Function("com", [cq], [cdata.oMf[IDX_BASE].rotation])
-
-# Casadi functions can't output a SE3 element, so the oMf matrices are split in rotational and translational components
-lf_position = casadi.Function("lf_pos", [cq], [cdata.oMf[IDX_LF].translation])
-lf_rotation = casadi.Function("lf_rot", [cq], [cdata.oMf[IDX_LF].rotation])
-rf_position = casadi.Function("rf_pos", [cq], [cdata.oMf[IDX_RF].translation])
-rf_rotation = casadi.Function("rf_rot", [cq], [cdata.oMf[IDX_RF].rotation])
-
-lg_position = casadi.Function("lg_pos", [cq], [cdata.oMf[IDX_LG].translation])
-lg_rotation = casadi.Function("lg_rot", [cq], [cdata.oMf[IDX_LG].rotation])
-le_rotation = casadi.Function("le_rot", [cq], [cdata.oMf[IDX_LE].rotation])
-le_translation = casadi.Function("le_pos", [cq], [cdata.oMf[IDX_LE].translation])
-
-rg_position = casadi.Function("rg_pos", [cq], [cdata.oMf[IDX_RG].translation])
-rg_rotation = casadi.Function("rg_rot", [cq], [cdata.oMf[IDX_RG].rotation])
-re_rotation = casadi.Function("re_rot", [cq], [cdata.oMf[IDX_RE].rotation])
-re_translation = casadi.Function("re_pos", [cq], [cdata.oMf[IDX_RE].translation])
-
-log = casadi.Function("log", [R, R_ref], [cpin.log3(R.T @ R_ref)])
-
-
-# Defining weights
-parallel_cost = 1e3
-distance_cost = 1e3
-straightness_body_cost = 1e3
-elbow_distance_cost = 1e1
-distance_btw_hands = 0.3
-
-opti = casadi.Opti()
-
-# Note that here the optimization variables are Dq, not q, and q is obtained by integrating.
-# q = q + Dq, where the plus sign is intended as an integrator (because nq is different from nv)
-# It is also possible to optimize directly in q, but in that case a constraint must be added in order to have
-# the norm squared of the quaternions = 1
-Dqs = opti.variable(nDq)
-qs = integrate(q0, Dqs)
-
-cost = casadi.sumsqr(qs - q0)
-
-# Distance between the hands
-cost += distance_cost * casadi.sumsqr(lg_position(qs) - rg_position(qs) - np.array([0, distance_btw_hands, 0]))
-
-# Cost on parallelism of the two hands
-r_ref = pin.utils.rotate("x", 3.14 / 2)  # orientation target
-cost += parallel_cost * casadi.sumsqr(log(rg_rotation(qs), r_ref))
-r_ref = pin.utils.rotate("x", -3.14 / 2)  # orientation target
-cost += parallel_cost * casadi.sumsqr(log(lg_rotation(qs), r_ref))
-
-# Body in a straight position
-cost += straightness_body_cost * casadi.sumsqr(log(base_rotation(qs), base_rotation(q0)))
-
-cost += elbow_distance_cost * casadi.sumsqr(le_translation(qs)[1] - 2) + elbow_distance_cost * casadi.sumsqr(re_translation(qs)[1] + 2)
-
-opti.minimize(cost)
-
-# COM
-opti.subject_to(opti.bounded(-0.1, com_position(qs)[0], 0.1))
-opti.subject_to(opti.bounded(-0.02, com_position(qs)[1], 0.02))
-opti.subject_to(opti.bounded(0.7, com_position(qs)[2], 0.9))
-
-# Standing foot
-opti.subject_to(rf_position(qs) - rf_position(q0) == 0)
-opti.subject_to(rf_rotation(qs) - rf_rotation(q0) == 0)
-
-# Free foot
-opti.subject_to(lf_position(qs)[2] >= 0.4)
-opti.subject_to(opti.bounded(0.05, lf_position(qs)[0:2], 0.1))
-
-r_ref = pin.utils.rotate("z", 3.14 / 2) @ pin.utils.rotate("y", 3.14 / 2)  # orientation target
-opti.subject_to(opti.bounded(-0.0, lf_rotation(qs) - r_ref, 0.0))
-
-# Left hand constraint to be at a certain height
-opti.subject_to(opti.bounded(1.1, rg_position(qs)[2], 1.2))
-opti.subject_to(opti.bounded(-distance_btw_hands / 2, rg_position(qs)[1], 0))
-
-# Solve it !
-opti.solver("ipopt")
-opti.set_initial(Dqs, np.zeros(nDq))
-
-try:
-    sol = opti.solve_limited()
-    # sol = opti.solve()
-    # sol_xs = [opti.value(var_x) for var_x in qs]
-    # sol_as = [opti.value(var_a) for var_a in Dqs]
-except:
-    print("ERROR in convergence, plotting debug info.")
-    # sol_xs = [opti.debug.value(var_x) for var_x in qs]
-    # sol_as = [opti.debug.value(var_a) for var_a in Dqs]
-print("Final cost is: ", opti.value(cost))
-q_sol = integrate(q0, opti.value(Dqs)).full()
+# --- Add box to represent target
+# Add a vizualization for the start and target
+box1ID = "world/box1"
+viz.addBox(box1ID, [0.05, 0.1, 0.2], [1.0, 0.2, 0.2, 0.5])
+box2ID = "world/box2"
+viz.addBox(box2ID, [0.05, 0.1, 0.2], [0.2, 0.2, 1.0, 0.5])
+for c in contacts:
+    c.viz = f"world/contact_{c.name}"
+    viz.addSphere(c.viz, [0.07], [0.8, 0.8, 0.2, 0.5])
 
 
 def displayScene(q, dt=1e-1):
@@ -156,11 +57,13 @@ def displayScene(q, dt=1e-1):
     - a box representing in_world_M_target
     """
     pin.framesForwardKinematics(model, data, q)
+    viz.applyConfiguration(box1ID, in_world_Base_start)
+    viz.applyConfiguration(box2ID, in_world_Base_target)
+    # TODO : add foot air target
     # M = data.oMf[tool_id]
-    # viz.applyConfiguration(boxID, in_world_M_target)
     # viz.applyConfiguration(tipID, M)
-    # for c in contacts:
-    #     viz.applyConfiguration(c.viz, data.oMf[c.id])
+    for c in contacts:
+        viz.applyConfiguration(c.viz, data.oMf[c.id])
     viz.display(q)
     time.sleep(dt)
 
@@ -170,6 +73,155 @@ def displayTraj(qs, dt=1e-2):
         displayScene(q, dt=dt)
 
 
+T = 50
+DT = 0.002
+w_vel = 0.1
+w_conf = 5
+w_term = 1e4
+
+
+# --- Casadi helpers
+cmodel = cpin.Model(model)
+cdata = cmodel.createData()
+
+nq = model.nq
+nv = model.nv
+nx = nq + nv
+ndx = 2 * nv
+cx = casadi.SX.sym("x", nx, 1)
+cdx = casadi.SX.sym("dx", nv * 2, 1)
+cq = cx[:nq]
+cv = cx[nq:]
+caq = casadi.SX.sym("a", nv, 1)
+
+# Compute kinematics casadi graphs
+cpin.forwardKinematics(cmodel, cdata, cq, cv, caq)
+cpin.updateFramePlacements(cmodel, cdata)
+
+# Sym graph for the integration operation x,dx -> x(+)dx = [model.integrate(q,dq),v+dv]
+cintegrate = casadi.Function(
+    "integrate",
+    [cx, cdx],
+    [casadi.vertcat(cpin.integrate(cmodel, cx[:nq], cdx[:nv]), cx[nq:] + cdx[nv:])],
+)
+
+# Sym graph for the operational error
+error_base = casadi.Function(
+    "ebase3",
+    [cx],
+    [cdata.oMf[base_id].translation - in_world_Base_start.translation],
+)
+error6_base = casadi.Function(
+    "ebase6",
+    [cx],
+    [cpin.log6(cdata.oMf[base_id].inverse() * cpin.SE3(in_world_Base_start)).vector],
+)
+
+# Sym graph for the integration operation x' = [ q+vDT+aDT**2, v+aDT ]
+cnext = casadi.Function(
+    "next",
+    [cx, caq],
+    [
+        casadi.vertcat(
+            cpin.integrate(cmodel, cx[:nq], cx[nq:] * DT + caq * DT**2),
+            cx[nq:] + caq * DT,
+        )
+    ],
+)
+
+# Sym graph for the contact constraint and Baugart correction terms
+# Works for both 3D and 6D contacts.
+# Uses the contact list <contacts> where each item must have a <name>, an <id> and a <type> field.
+dpcontacts = {}  # Error in contact position
+vcontacts = {}  # Error in contact velocity
+acontacts = {}  # Contact acceleration
+
+for c in contacts:
+    if c.type == pin.ContactType.CONTACT_3D:
+        p0 = data.oMf[c.id].translation.copy()
+        dpcontacts[c.name] = casadi.Function(
+            f"dpcontact_{c.name}",
+            [cx],
+            [-(cdata.oMf[c.id].inverse().act(casadi.SX(p0)))],
+        )
+        vcontacts[c.name] = casadi.Function(
+            f"vcontact_{c.name}",
+            [cx],
+            [cpin.getFrameVelocity(cmodel, cdata, c.id, pin.LOCAL).linear],
+        )
+        acontacts[c.name] = casadi.Function(
+            f"acontact_{c.name}",
+            [cx, caq],
+            [cpin.getFrameClassicalAcceleration(cmodel, cdata, c.id, pin.LOCAL).linear],
+        )
+    elif c.type == pin.ContactType.CONTACT_6D:
+        p0 = data.oMf[c.id]
+        dpcontacts[c.name] = casadi.Function(
+            f"dpcontact_{c.name}",
+            [cx],
+            [np.zeros(6)],
+        )
+        vcontacts[c.name] = casadi.Function(
+            f"vcontact_{c.name}",
+            [cx],
+            [cpin.getFrameVelocity(cmodel, cdata, c.id, pin.LOCAL).vector],
+        )
+        acontacts[c.name] = casadi.Function(
+            f"acontact_{c.name}",
+            [cx, caq],
+            [cpin.getFrameAcceleration(cmodel, cdata, c.id, pin.LOCAL).vector],
+        )
+
+Kp = 200
+Kv = 2 * np.sqrt(Kp)
+
+# Get initial contact position (for Baumgart correction)
+pin.framesForwardKinematics(model, data, robot.q0)
+pin.updateFramePlacements(model, data)
+
+cbaumgart = {c.name: casadi.Function(f"K_{c.name}", [cx], [Kp * dpcontacts[c.name](cx) + Kv * vcontacts[c.name](cx)]) for c in contacts}
+
+opti = casadi.Opti()
+var_dxs = [opti.variable(ndx) for t in range(T + 1)]
+var_as = [opti.variable(nv) for t in range(T)]
+var_xs = [cintegrate(np.concatenate([robot.q0, np.zeros(nv)]), var_dx) for var_dx in var_dxs]
+
+totalcost = 0
+# Define the running cost
+for t in range(T):
+    totalcost += 1e-3 * DT * casadi.sumsqr(var_xs[t][nq:])
+    totalcost += 1e-4 * DT * casadi.sumsqr(var_as[t])
+totalcost += 1e4 * casadi.sumsqr(error6_base(var_xs[T]))
+
+opti.subject_to(var_xs[0][:nq] == robot.q0)
+opti.subject_to(var_xs[0][nq:] == 0)
+
+for t in range(T):
+    opti.subject_to(cnext(var_xs[t], var_as[t]) == var_xs[t + 1])
+
+for t in range(T):
+    for c in contacts:
+        # correction = Kv * vcontacts[c.name](var_xs[t]) + Kp * dpcontacts[c.name](var_xs[t])
+        correction = cbaumgart[c.name](var_xs[t])
+        opti.subject_to(acontacts[c.name](var_xs[t], var_as[t]) == -correction)
+
+### SOLVE
+opti.minimize(totalcost)
+opti.solver("ipopt")  # set numerical backend
+# opti.callback(lambda i: displayScene(opti.debug.value(var_xs[-1][:nq])))
+
+# Caution: in case the solver does not converge, we are picking the candidate values
+# at the last iteration in opti.debug, and they are NO guarantee of what they mean.
+try:
+    sol = opti.solve_limited()
+    sol_xs = [opti.value(var_x) for var_x in var_xs]
+    sol_as = [opti.value(var_a) for var_a in var_as]
+except:
+    print("ERROR in convergence, plotting debug info.")
+    sol_xs = [opti.debug.value(var_x) for var_x in var_xs]
+    sol_as = [opti.debug.value(var_a) for var_a in var_as]
+
 while True:
-    displayScene(q_sol)
-    # displayTraj([x[:nq] for x in sol_xs], DT)
+    displayScene(robot.q0, 1)
+    displayTraj([x[:nq] for x in sol_xs], DT)
+    displayScene(sol_xs[-1][:nq], 1)

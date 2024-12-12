@@ -23,10 +23,6 @@ q0 = robot.q0
 nq = cmodel.nq
 nDq = cmodel.nv
 
-# in_world_M_target = pin.SE3(pin.utils.rotate("y", 3), np.array([-0.1, 0.2, 0.45094]))  # x,y,z
-# contacts = [SimpleNamespace(name="left_sole_link", type=pin.ContactType.CONTACT_6D)]
-# tool_frameName = "right_sole_link"
-
 cq = casadi.SX.sym("cq", nq, 1)
 cDq = casadi.SX.sym("cx", nDq, 1)
 R = casadi.SX.sym("R", 3, 3)
