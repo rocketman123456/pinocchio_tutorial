@@ -6,7 +6,7 @@ import pinocchio as pin
 from pinocchio import casadi as cpin
 from meshcat_viewer_wrapper import MeshcatVisualizer
 
-### Quadruped Jumping Example
+### Quadruped Jumping Example : TODO
 robot = robex.load("solo12")
 # The pinocchio model is what we are really interested by.
 model = robot.model

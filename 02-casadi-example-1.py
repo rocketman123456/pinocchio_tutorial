@@ -8,6 +8,7 @@ import pinocchio as pin
 import pinocchio.casadi as cpin
 from meshcat_viewer_wrapper import MeshcatVisualizer, colors
 
+# Robot Arm End Effector Example
 robot = example_robot_data.load("ur10")
 model = robot.model
 data = robot.data

@@ -3,10 +3,10 @@ import casadi
 import example_robot_data as robex
 import numpy as np
 import pinocchio as pin
-import threading
 from pinocchio import casadi as cpin
 from meshcat_viewer_wrapper import MeshcatVisualizer
 
+# robot arm example, with dynamics model
 robot = robex.load("ur10")
 
 # target
@@ -34,8 +34,6 @@ viz.addBox(boxID, [0.05, 0.1, 0.2], [1.0, 0.2, 0.2, 0.5])
 tipID = "world/blue"
 viz.addBox(tipID, [0.08] * 3, [0.2, 0.2, 1.0, 0.5])
 
-lock = threading.Lock()
-
 
 def displayScene(q, dt=1e-1):
     """
@@ -56,18 +54,6 @@ def displayTraj(qs, dt=1e-2):
     for q in qs[1:]:
         displayScene(q, dt=dt)
 
-
-# Function to update the visualizer in a separate thread
-def visualizer_thread():
-    while True:
-        with lock:
-            viz.display(q)  # Update the visualizer with the latest configuration
-        time.sleep(0.01)  # Adjust for desired update rate
-
-
-# Start the visualizer thread
-thread = threading.Thread(target=visualizer_thread, daemon=True)
-thread.start()
 
 curr_time = 0.0
 
@@ -95,8 +81,10 @@ while True:
     cq = cx[:nq]
     cv = cx[nq:]
     caq = casadi.SX.sym("a", nv, 1)
+    ctauq = casadi.SX.sym("tau", nv, 1)
 
     # Compute kinematics casadi graphs
+    cpin.aba(cmodel, cdata, cq, cv, ctauq)
     cpin.forwardKinematics(cmodel, cdata, cq, cv, caq)
     cpin.updateFramePlacements(cmodel, cdata)
 
@@ -118,6 +106,12 @@ while True:
     w_conf = 5
     w_term = 1e4
 
+    caba = casadi.Function(
+        "aba",
+        [cx, ctauq],
+        [cdata.ddq],
+    )
+
     cnext = casadi.Function(
         "next",
         [cx, caq],
@@ -129,9 +123,16 @@ while True:
         ],
     )
 
+    error_tool = casadi.Function(
+        "etool3",
+        [cx],
+        [cdata.oMf[tool_id].translation - in_world_M_target.translation],
+    )
+
     opti = casadi.Opti()
     var_xs = [opti.variable(nx) for t in range(T + 1)]
     var_as = [opti.variable(nv) for t in range(T)]
+    var_us = [opti.variable(nv) for t in range(T)]
     totalcost = 0
 
     # running cost
@@ -144,8 +145,10 @@ while True:
 
     # set constraints
     opti.subject_to(var_xs[0][:nq] == robot.q0)
-    opti.subject_to(var_xs[0][nq:] == 0)
+    opti.subject_to(var_xs[0][nq:] == 0)  # zero initial velocity
+    opti.subject_to(var_xs[T][nq:] == 0)  # zero terminal velocity
     for t in range(T):
+        opti.subject_to(caba(var_xs[t], var_us[t]) == var_as[t])
         opti.subject_to(cnext(var_xs[t], var_as[t]) == var_xs[t + 1])
 
     # set cost function
@@ -159,13 +162,14 @@ while True:
         sol = opti.solve_limited()
         sol_xs = [opti.value(var_x) for var_x in var_xs]
         sol_as = [opti.value(var_a) for var_a in var_as]
+        sol_us = [opti.value(var_u) for var_u in var_us]
     except:
         print("ERROR in convergence, plotting debug info.")
         sol_xs = [opti.debug.value(var_x) for var_x in var_xs]
         sol_as = [opti.debug.value(var_a) for var_a in var_as]
+        sol_us = [opti.debug.value(var_u) for var_u in var_us]
 
-    with lock:
-        q = [x[:nq] for x in sol_xs][T]
-        robot.q0 = q
-        displayTraj([x[:nq] for x in sol_xs], 1e-1)
+    q = [x[:nq] for x in sol_xs][T]
+    robot.q0 = q
+    displayTraj([x[:nq] for x in sol_xs], 1e-1)
     time.sleep(0.05)

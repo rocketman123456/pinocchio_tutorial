@@ -9,7 +9,7 @@ from pinocchio import casadi as cpin
 from meshcat_viewer_wrapper import MeshcatVisualizer
 from types import SimpleNamespace
 
-
+# Talos Biped One Foot Standing
 robot = robex.load("talos_legs")
 # Open the viewer
 viz = MeshcatVisualizer(robot, url=None)

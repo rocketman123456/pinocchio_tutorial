@@ -7,6 +7,7 @@ import threading
 from pinocchio import casadi as cpin
 from meshcat_viewer_wrapper import MeshcatVisualizer
 
+# robot arm example
 robot = robex.load("ur10")
 
 # target
@@ -34,8 +35,6 @@ viz.addBox(boxID, [0.05, 0.1, 0.2], [1.0, 0.2, 0.2, 0.5])
 tipID = "world/blue"
 viz.addBox(tipID, [0.08] * 3, [0.2, 0.2, 1.0, 0.5])
 
-lock = threading.Lock()
-
 
 def displayScene(q, dt=1e-1):
     """
@@ -57,18 +56,6 @@ def displayTraj(qs, dt=1e-2):
         displayScene(q, dt=dt)
 
 
-# Function to update the visualizer in a separate thread
-def visualizer_thread():
-    while True:
-        with lock:
-            viz.display(q)  # Update the visualizer with the latest configuration
-        time.sleep(0.01)  # Adjust for desired update rate
-
-
-# Start the visualizer thread
-thread = threading.Thread(target=visualizer_thread, daemon=True)
-thread.start()
-
 curr_time = 0.0
 
 while True:
@@ -86,45 +73,67 @@ while True:
     cmodel = cpin.Model(model)
     cdata = cmodel.createData()
 
+    nq = model.nq
+    nv = model.nv
+    nx = nq + nv
+    ndx = 2 * nv
+    cx = casadi.SX.sym("x", nx, 1)
+    cdx = casadi.SX.sym("dx", nv * 2, 1)
+    cq = cx[:nq]
+    cv = cx[nq:]
+    caq = casadi.SX.sym("a", nv, 1)
+
     # Compute kinematics casadi graphs
-    cq = casadi.SX.sym("x", model.nq, 1)
-    cpin.framesForwardKinematics(cmodel, cdata, cq)
+    cpin.forwardKinematics(cmodel, cdata, cq, cv, caq)
+    cpin.updateFramePlacements(cmodel, cdata)
 
     error3_tool = casadi.Function(
         "etool3",
-        [cq],
+        [cx],
         [cdata.oMf[tool_id].translation - in_world_M_target.translation],
     )
     error6_tool = casadi.Function(
         "etool6",
-        [cq],
+        [cx],
         [cpin.log6(cdata.oMf[tool_id].inverse() * cpin.SE3(in_world_M_target)).vector],
     )
     error_tool = error6_tool
 
-    T = 10
-    w_run = 0.1
-    w_term = 1
+    T = 50
+    DT = 0.002
+    w_vel = 0.1
+    w_conf = 5
+    w_term = 1e4
+
+    cnext = casadi.Function(
+        "next",
+        [cx, caq],
+        [
+            casadi.vertcat(
+                cpin.integrate(cmodel, cx[:nq], cx[nq:] * DT + caq * DT**2),
+                cx[nq:] + caq * DT,
+            )
+        ],
+    )
 
     opti = casadi.Opti()
-    var_qs = [opti.variable(model.nq) for t in range(T + 1)]
+    var_xs = [opti.variable(nx) for t in range(T + 1)]
+    var_as = [opti.variable(nv) for t in range(T)]
     totalcost = 0
-
-    # set init value
-    # for i in range(T):
-    #     opti.set_initial(var_qs[i], q)
-    # for i in range(T):
-    #     opti.set_initial(var_xs[i], q)
 
     # running cost
     for t in range(T):
-        totalcost += w_run * casadi.sumsqr(var_qs[t] - var_qs[t + 1])
+        totalcost += 1e-3 * DT * casadi.sumsqr(var_xs[t][nq:])
+        totalcost += 1e-4 * DT * casadi.sumsqr(var_as[t])
 
     # terminate cost
-    totalcost += w_term * casadi.sumsqr(error_tool(var_qs[T]))
+    totalcost += w_term * casadi.sumsqr(error_tool(var_xs[T]))
 
     # set constraints
-    opti.subject_to(var_qs[0] == robot.q0)
+    opti.subject_to(var_xs[0][:nq] == robot.q0)
+    opti.subject_to(var_xs[0][nq:] == 0)
+    for t in range(T):
+        opti.subject_to(cnext(var_xs[t], var_as[t]) == var_xs[t + 1])
 
     # set cost function
     opti.minimize(totalcost)
@@ -135,13 +144,14 @@ while True:
     # at the last iteration in opti.debug, and they are NO guarantee of what they mean.
     try:
         sol = opti.solve_limited()
-        sol_qs = [opti.value(var_q) for var_q in var_qs]
+        sol_xs = [opti.value(var_x) for var_x in var_xs]
+        sol_as = [opti.value(var_a) for var_a in var_as]
     except:
         print("ERROR in convergence, plotting debug info.")
-        sol_qs = [opti.debug.value(var_q) for var_q in var_qs]
+        sol_xs = [opti.debug.value(var_x) for var_x in var_xs]
+        sol_as = [opti.debug.value(var_a) for var_a in var_as]
 
-    with lock:
-        q = sol_qs[T]
-        robot.q0 = q
-        displayTraj(sol_qs, 1e-1)
+    q = [x[:nq] for x in sol_xs][T]
+    robot.q0 = q
+    displayTraj([x[:nq] for x in sol_xs], 1e-1)
     time.sleep(0.05)

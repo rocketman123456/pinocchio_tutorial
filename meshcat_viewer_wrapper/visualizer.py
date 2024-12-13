@@ -29,7 +29,7 @@ def materialFromColor(color):
 
 
 class MeshcatVisualizer(PMV):
-    def __init__(self, robot=None, model=None, collision_model=None, visual_model=None, url="classical"):  # None
+    def __init__(self, robot=None, model=None, collision_model=None, visual_model=None, url=None):  # "classical"
         if robot is not None:
             super().__init__(robot.model, robot.collision_model, robot.visual_model)
         elif model is not None:
@@ -71,6 +71,10 @@ class MeshcatVisualizer(PMV):
     def addBox(self, name, dims, color):
         material = materialFromColor(color)
         self.viewer[name].set_object(meshcat.geometry.Box(dims), material)
+
+    def addEllipsoid(self, name, dims, color):
+        material = materialFromColor(color)
+        self.viewer[name].set_object(meshcat.geometry.Ellipsoid(dims), material)
 
     def applyConfiguration(self, name, placement):
         if isinstance(placement, list) or isinstance(placement, tuple):

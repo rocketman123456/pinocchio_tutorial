@@ -7,7 +7,7 @@ from pinocchio import casadi as cpin
 from meshcat_viewer_wrapper import MeshcatVisualizer
 from types import SimpleNamespace
 
-# Talos Robot Jumping Example : TODO
+### Talos Robot Jumping Example : TODO
 robot = robex.load("talos_legs")
 # Open the viewer
 viz = MeshcatVisualizer(robot, url=None)
@@ -20,10 +20,25 @@ data = model.createData()
 in_world_Base_start = pin.SE3(np.eye(3), np.array([0.0, 0.0, 0.8]))  # x,y,z
 in_world_Base_target = pin.SE3(np.eye(3), np.array([0.0, 0.0, 1.2]))  # x,y,z
 # in_world_M_target = pin.SE3(pin.utils.rotate("y", 3), np.array([-0.1, 0.2, 0.45094]))  # x,y,z
-contacts = [
+contacts_1 = [
     SimpleNamespace(name="left_sole_link", type=pin.ContactType.CONTACT_6D),
     SimpleNamespace(name="right_sole_link", type=pin.ContactType.CONTACT_6D),
 ]
+contacts_2 = []
+contacts_3 = [
+    SimpleNamespace(name="left_sole_link", type=pin.ContactType.CONTACT_6D),
+    SimpleNamespace(name="right_sole_link", type=pin.ContactType.CONTACT_6D),
+]
+
+for c in contacts_1:
+    c.id = model.getFrameId(c.name)
+    assert c.id < len(model.frames)
+for c in contacts_2:
+    c.id = model.getFrameId(c.name)
+    assert c.id < len(model.frames)
+for c in contacts_3:
+    c.id = model.getFrameId(c.name)
+    assert c.id < len(model.frames)
 
 tool_frameNames = ["left_sole_link", "right_sole_link"]
 tool_ids = []
@@ -34,17 +49,13 @@ for name in tool_frameNames:
 base_id = model.getFrameId("base_link")
 base_2_id = model.getFrameId("torso_2_link")
 
-for c in contacts:
-    c.id = model.getFrameId(c.name)
-    assert c.id < len(model.frames)
-
 # --- Add box to represent target
 # Add a vizualization for the start and target
 box1ID = "world/box1"
 viz.addBox(box1ID, [0.05, 0.1, 0.2], [1.0, 0.2, 0.2, 0.5])
 box2ID = "world/box2"
 viz.addBox(box2ID, [0.05, 0.1, 0.2], [0.2, 0.2, 1.0, 0.5])
-for c in contacts:
+for c in contacts_1:
     c.viz = f"world/contact_{c.name}"
     viz.addSphere(c.viz, [0.07], [0.8, 0.8, 0.2, 0.5])
 
@@ -62,7 +73,7 @@ def displayScene(q, dt=1e-1):
     # TODO : add foot air target
     # M = data.oMf[tool_id]
     # viz.applyConfiguration(tipID, M)
-    for c in contacts:
+    for c in contacts_1:
         viz.applyConfiguration(c.viz, data.oMf[c.id])
     viz.display(q)
     time.sleep(dt)
@@ -93,8 +104,10 @@ cdx = casadi.SX.sym("dx", nv * 2, 1)
 cq = cx[:nq]
 cv = cx[nq:]
 caq = casadi.SX.sym("a", nv, 1)
+ctauq = casadi.SX.sym("tau", nv, 1)
 
 # Compute kinematics casadi graphs
+cpin.aba(cmodel, cdata, cq, cv, ctauq)
 cpin.forwardKinematics(cmodel, cdata, cq, cv, caq)
 cpin.updateFramePlacements(cmodel, cdata)
 
@@ -117,6 +130,12 @@ error6_base = casadi.Function(
     [cpin.log6(cdata.oMf[base_id].inverse() * cpin.SE3(in_world_Base_start)).vector],
 )
 
+caba = casadi.Function(
+    "aba",
+    [cx, ctauq],
+    [cdata.ddq],
+)
+
 # Sym graph for the integration operation x' = [ q+vDT+aDT**2, v+aDT ]
 cnext = casadi.Function(
     "next",
@@ -136,7 +155,7 @@ dpcontacts = {}  # Error in contact position
 vcontacts = {}  # Error in contact velocity
 acontacts = {}  # Contact acceleration
 
-for c in contacts:
+for c in contacts_1:
     if c.type == pin.ContactType.CONTACT_3D:
         p0 = data.oMf[c.id].translation.copy()
         dpcontacts[c.name] = casadi.Function(
@@ -179,12 +198,13 @@ Kv = 2 * np.sqrt(Kp)
 pin.framesForwardKinematics(model, data, robot.q0)
 pin.updateFramePlacements(model, data)
 
-cbaumgart = {c.name: casadi.Function(f"K_{c.name}", [cx], [Kp * dpcontacts[c.name](cx) + Kv * vcontacts[c.name](cx)]) for c in contacts}
+cbaumgart = {c.name: casadi.Function(f"K_{c.name}", [cx], [Kp * dpcontacts[c.name](cx) + Kv * vcontacts[c.name](cx)]) for c in contacts_1}
 
 opti = casadi.Opti()
 var_dxs = [opti.variable(ndx) for t in range(T + 1)]
-var_as = [opti.variable(nv) for t in range(T)]
 var_xs = [cintegrate(np.concatenate([robot.q0, np.zeros(nv)]), var_dx) for var_dx in var_dxs]
+var_as = [opti.variable(nv) for t in range(T)]
+var_us = [opti.variable(nv) for t in range(T)]
 
 totalcost = 0
 # Define the running cost
@@ -197,10 +217,11 @@ opti.subject_to(var_xs[0][:nq] == robot.q0)
 opti.subject_to(var_xs[0][nq:] == 0)
 
 for t in range(T):
+    opti.subject_to(caba(var_xs[t], var_us[t]) == var_as[t])
     opti.subject_to(cnext(var_xs[t], var_as[t]) == var_xs[t + 1])
 
 for t in range(T):
-    for c in contacts:
+    for c in contacts_1:
         # correction = Kv * vcontacts[c.name](var_xs[t]) + Kp * dpcontacts[c.name](var_xs[t])
         correction = cbaumgart[c.name](var_xs[t])
         opti.subject_to(acontacts[c.name](var_xs[t], var_as[t]) == -correction)
