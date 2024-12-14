@@ -20,52 +20,6 @@ print(shape)
 vertices = shape.vertices()
 print(vertices)
 
-# cw = casadi.SX.sym("w", 3)
-# exp = casadi.Function("exp3", [cw], [cpin.exp3(cw)])
-
-# opti = casadi.Opti()
-# var_w = opti.variable(3)
-# var_r = opti.variable(3)
-# var_c = opti.variable(3)
-
-# # The ellipsoid matrix is represented by w=log3(R),diag(P) with R,P=eig(A)
-# R = exp(var_w)
-# A = R @ casadi.diag(1 / var_r**2) @ R.T
-
-# totalcost = var_r[0] * var_r[1] * var_r[2]
-
-# opti.subject_to(var_r >= 0)
-
-# for g_v in vertices:
-#     # g_v is the vertex v expressed in the geometry frame.
-#     # Convert point from geometry frame to joint frame
-#     j_v = geom.placement.act(g_v)
-#     # Constraint the ellipsoid to be including the point
-#     opti.subject_to((j_v - var_c).T @ A @ (j_v - var_c) <= 1)
-
-# opti.minimize(totalcost)
-# opti.solver("ipopt")  # set numerical backend
-# opti.set_initial(var_r, 10)
-
-# sol = opti.solve_limited()
-
-# sol_r = opti.value(var_r)
-# sol_A = opti.value(A)
-# sol_c = opti.value(var_c)
-# sol_R = opti.value(exp(var_w))
-
-# Build the ellipsoid 3d shape
-# Ellipsoid in meshcat
-# viz.addEllipsoid("el", sol_r, [0.3, 0.9, 0.3, 0.3])
-# # jMel is the placement of the ellipsoid in the joint frame
-# jMel = pin.SE3(sol_R, sol_c)
-
-# Place the body, the vertices and the ellispod at a random configuration oMj_rand
-# oMj_rand = pin.SE3.Random()
-# viz.applyConfiguration(viz.getViewerNodeName(geom, pin.VISUAL), oMj_rand)
-# for i in np.arange(0, vertices.shape[0]):
-#     viz.applyConfiguration(f"world/point_{i}", oMj_rand.act(vertices[i]).tolist() + [1, 0, 0, 0])
-# viz.applyConfiguration("el", oMj_rand * jMel)
 
 ### HYPER PARAMETERS
 Mtarget = pin.SE3(pin.utils.rotate("y", 3), np.array([-0.8, -0.1, 0.2]))  # x,y,z

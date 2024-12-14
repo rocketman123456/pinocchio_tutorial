@@ -5,8 +5,6 @@ import crocoddyl
 import signal
 from meshcat_viewer_wrapper import MeshcatVisualizer
 
-# from biped import SimpleBipedGaitProblem
-
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 
@@ -558,6 +556,8 @@ for i, phase in enumerate(GAITPHASES):
                 )
             )
             solver[i].th_stop = 1e-7
+        elif key == "jumping":
+            pass
 
     solver[i].setCallbacks(
         [

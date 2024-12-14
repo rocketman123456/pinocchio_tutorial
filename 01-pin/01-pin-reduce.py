@@ -8,12 +8,12 @@ import pinocchio as pin
 
 # Load UR robot arm
 # This path refers to Pinocchio source code but you can define your own directory here.
-pinocchio_model_dir = Path(__file__).parent
+pinocchio_model_dir = Path(__file__).parent.parent / "third_party"
 model_path = pinocchio_model_dir / "example-robot-data/robots"
 mesh_dir = pinocchio_model_dir
 # You should change here to set up your own URDF file
 urdf_filename = model_path / "ur_description/urdf/ur5_robot.urdf"
-model, collision_model, visual_model = pin.buildModelsFromUrdf(urdf_filename, mesh_dir)
+model, collision_model, visual_model = pin.buildModelsFromUrdf(str(urdf_filename), str(mesh_dir))
 
 # Check dimensions of the original model
 print("standard model: dim=" + str(len(model.joints)))
@@ -76,7 +76,7 @@ print("-" * 30)
 # reference_configuration is optional: if not provided, neutral configuration used
 # you can even mix joint names and joint ids
 mixed_jointsToLockIDs = [jointsToLockIDs[0], "wrist_2_joint", "wrist_3_joint"]
-robot = pin.RobotWrapper.BuildFromURDF(urdf_filename, mesh_dir)
+robot = pin.RobotWrapper.BuildFromURDF(str(urdf_filename), str(mesh_dir))
 reduced_robot = robot.buildReducedRobot(
     list_of_joints_to_lock=mixed_jointsToLockIDs,
     reference_configuration=initialJointConfig,

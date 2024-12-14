@@ -7,7 +7,7 @@ from pinocchio import casadi as cpin
 from meshcat_viewer_wrapper import MeshcatVisualizer
 from types import SimpleNamespace
 
-# talos standing with contacts in older version
+# talos standing with contacts in older version : TODO
 robot = robex.load("talos_legs")
 # Open the viewer
 viz = MeshcatVisualizer(robot, url=None)
@@ -59,7 +59,7 @@ cdata = cmodel.createData()
 ccontact_models = [cpin.RigidConstraintModel(c) for c in contact_models]
 ccontact_datas = [c.createData() for c in ccontact_models]
 cprox_settings = cpin.ProximalSettings(prox_settings.absolute_accuracy, prox_settings.mu, prox_settings.max_iter)
-cpin.initConstraintDynamics(cmodel, cdata, ccontact_models)
+cpin.initConstraintDynamics(cmodel, cdata, ccontact_models)  # TODO
 
 nq = model.nq
 nv = model.nv

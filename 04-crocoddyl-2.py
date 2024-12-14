@@ -1,4 +1,3 @@
-# %load tp3/unicycle_toward_origin.py
 import crocoddyl
 import numpy as np
 import matplotlib.pylab as plt

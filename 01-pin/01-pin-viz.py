@@ -11,16 +11,16 @@ from pinocchio.visualize import MeshcatVisualizer
 
 # Load the URDF model.
 # Conversion with str seems to be necessary when executing this file with ipython
-pinocchio_model_dir = Path(__file__).parent
+pinocchio_model_dir = Path(__file__).parent.parent / "third_party"
 
 model_path = pinocchio_model_dir / "example-robot-data/robots"
 mesh_dir = pinocchio_model_dir
 # urdf_filename = "talos_reduced.urdf"
-# urdf_model_path = model_path / "talos_data/robots" / urdf_filename
+# urdf_model_path = join(join(model_path,"talos_data/robots"),urdf_filename)
 urdf_filename = "solo.urdf"
 urdf_model_path = model_path / "solo_description/robots" / urdf_filename
 
-model, collision_model, visual_model = pin.buildModelsFromUrdf(urdf_model_path, mesh_dir, pin.JointModelFreeFlyer())
+model, collision_model, visual_model = pin.buildModelsFromUrdf(str(urdf_model_path), str(mesh_dir), pin.JointModelFreeFlyer())
 
 # Start a new MeshCat server and client.
 # Note: the server can also be started separately using the "meshcat-server" command in
